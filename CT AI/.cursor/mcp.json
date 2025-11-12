@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "time-local": {
+      "command": "node",
+      "args": ["H:/Cursor/skindoc/local-mcp-servers/time-local/server.js"]
+    },
+    "memory-local": {
+      "command": "node",
+      "args": ["H:/Cursor/skindoc/local-mcp-servers/memory-local/server.js"]
+    },
+    "fetch-local": {
+      "command": "node",
+      "args": ["H:/Cursor/skindoc/local-mcp-servers/fetch-local/server.js"]
+    },
+    "filesystem-local": {
+      "command": "node",
+      "args": ["H:/Cursor/skindoc/local-mcp-servers/filesystem-local/server.js"]
+    },
+    "sequential-thinking-local": {
+      "command": "node",
+      "args": ["H:/Cursor/skindoc/local-mcp-servers/sequential-thinking-local/server.js"]
+    },
+    "context7-local": {
+      "command": "node",
+      "args": ["H:/Cursor/skindoc/local-mcp-servers/context7-local/server.js"]
+    },
+    "moondream-general": {
+      "command": "node",
+      "args": ["H:/Cursor/skindoc/local-mcp-servers/moondream-minimal/moondream-mcp-optimized/ultra-minimal/server.js"]
+    }
+  }
+}
+
