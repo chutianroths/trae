@@ -9,6 +9,7 @@ function createAliases(injectFileService: boolean): Record<string, string> {
 	const aliases: Record<string, string> = {
 		'vscode': path.resolve(__dirname, '../test-utils/vscodeMock.ts'),
 		'@cursor/types': path.resolve(__dirname, '../../src/vs/platform/reactivestorage/common/reactiveStorageTypes'),
+		'@cursor/experiment-config': path.resolve(__dirname, '../../src/vs/platform/experiments/common/experimentConfig.gen'),
 		'proto': path.resolve(__dirname, '../../src/proto'),
 		'test-utils': path.resolve(__dirname, '../test-utils'),
 	};

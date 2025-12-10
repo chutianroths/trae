@@ -15,6 +15,9 @@ const serverEnvSchema = z.object({
     .min(16, "JWT_REFRESH_SECRET should have at least 16 characters"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   GEMINI_API_KEY: z.string().min(1, "GEMINI_API_KEY is required"),
+  WENXIN_API_KEY: z.string().optional(),
+  TONGYI_API_KEY: z.string().optional(),
+  HUNYUAN_API_KEY: z.string().optional(),
 });
 
 const parsed = serverEnvSchema.safeParse({
@@ -24,6 +27,9 @@ const parsed = serverEnvSchema.safeParse({
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  WENXIN_API_KEY: process.env.WENXIN_API_KEY,
+  TONGYI_API_KEY: process.env.TONGYI_API_KEY,
+  HUNYUAN_API_KEY: process.env.HUNYUAN_API_KEY,
 });
 
 if (!parsed.success) {

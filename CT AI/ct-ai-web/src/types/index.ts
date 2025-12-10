@@ -40,6 +40,7 @@ export interface EditModule {
 }
 
 export interface AIModel {
+  id: string;
   name: string;
   provider: string;
   capabilities: string[];
@@ -49,6 +50,9 @@ export interface AIModel {
   status: 'online' | 'offline';
   latency?: number;
   apiKeyId: AiApiKeyId;
+  freeTier?: boolean;
+  officialSite?: string;
+  quotaNotes?: string;
 }
 
 export interface EditProject {
@@ -215,6 +219,7 @@ export const EDIT_MODULES: EditModule[] = [
 
 export const AI_MODELS: AIModel[] = [
   {
+    id: 'gemini-flash',
     name: 'Gemini 2.5 Flash Image',
     provider: 'Google',
     capabilities: ['image_generation', 'image_editing', 'inpainting'],
@@ -224,8 +229,12 @@ export const AI_MODELS: AIModel[] = [
     status: 'online',
     latency: 2.2,
     apiKeyId: 'gemini',
+    freeTier: false,
+    officialSite: 'https://ai.google.dev/gemini-api/docs/image-generation',
+    quotaNotes: '需使用 Google AI Studio 付费套餐，中国大陆无免费额度',
   },
   {
+    id: 'dalle-3',
     name: 'DALL·E 3',
     provider: 'OpenAI',
     capabilities: ['image_generation', 'image_editing'],
@@ -235,8 +244,12 @@ export const AI_MODELS: AIModel[] = [
     status: 'online',
     latency: 3.1,
     apiKeyId: 'dalle3',
+    freeTier: false,
+    officialSite: 'https://platform.openai.com/docs/guides/images',
+    quotaNotes: '需绑定国际支付方式；无官方免费额度',
   },
   {
+    id: 'sdxl',
     name: 'Stable Diffusion XL',
     provider: 'Stability AI',
     capabilities: ['image_generation', 'image_editing', 'inpainting'],
@@ -246,8 +259,12 @@ export const AI_MODELS: AIModel[] = [
     status: 'online',
     latency: 2.8,
     apiKeyId: 'sdxl',
+    freeTier: false,
+    officialSite: 'https://platform.stability.ai/docs/api-reference#tag/SDXL',
+    quotaNotes: '官方账户提供 25 次一次性试用，之后按量计费',
   },
   {
+    id: 'midjourney',
     name: 'Midjourney v6',
     provider: 'Midjourney',
     capabilities: ['image_generation', 'image_editing'],
@@ -257,8 +274,12 @@ export const AI_MODELS: AIModel[] = [
     status: 'online',
     latency: 4.5,
     apiKeyId: 'midjourney',
+    freeTier: false,
+    officialSite: 'https://www.midjourney.com/',
+    quotaNotes: '需订阅会员计划；通过 Discord 调用，不提供 API 免费额度',
   },
   {
+    id: 'adobe-firefly',
     name: 'Adobe Firefly 3',
     provider: 'Adobe',
     capabilities: ['image_generation', 'image_editing'],
@@ -268,50 +289,69 @@ export const AI_MODELS: AIModel[] = [
     status: 'online',
     latency: 2.9,
     apiKeyId: 'firefly',
+    freeTier: false,
+    officialSite: 'https://www.adobe.com/products/firefly.html',
+    quotaNotes: '依赖 Adobe ID 与 Creative Cloud 额度，暂未开放大陆 API',
   },
   {
+    id: 'ernie-vilg',
     name: '文心一格',
     provider: '百度',
     capabilities: ['image_generation', 'image_editing', 'style_transfer'],
-    costPerImage: 0.02,
+    costPerImage: 0,
     requiresVPN: false,
     region: 'domestic',
     status: 'online',
     latency: 1.2,
     apiKeyId: 'wenxinyige',
+    freeTier: true,
+    officialSite: 'https://cloud.baidu.com/product/wenxinyige',
+    quotaNotes: '千帆开发者版：文本生图每日 50 次，图像编辑月配额 200 次，超额按量付费',
   },
   {
+    id: 'tongyi-wanxiang',
     name: '通义万相',
     provider: '阿里巴巴',
     capabilities: ['image_generation', 'image_editing', 'inpainting'],
-    costPerImage: 0.018,
+    costPerImage: 0,
     requiresVPN: false,
     region: 'domestic',
     status: 'online',
     latency: 1.4,
     apiKeyId: 'tongyiwanxiang',
+    freeTier: true,
+    officialSite: 'https://dashscope.aliyun.com/',
+    quotaNotes: 'DashScope 免费层：1024px 文生图每日 500 张 + 10k tokens/月；需实名',
   },
   {
+    id: 'hunyuan-image',
     name: '混元图像',
     provider: '腾讯',
     capabilities: ['image_generation', 'image_editing'],
-    costPerImage: 0.02,
+    costPerImage: 0,
     requiresVPN: false,
     region: 'domestic',
     status: 'online',
     latency: 1.6,
     apiKeyId: 'hunyuan',
+    freeTier: true,
+    officialSite: 'https://cloud.tencent.com/product/hunyuan',
+    quotaNotes: '混元图像 Beta：实名认证开发者每日 100 张，高校/创业计划额外 3000 张/月',
   },
   {
+    id: 'rishin-star',
     name: '日日新·星辰',
     provider: '商汤',
     capabilities: ['image_generation', 'image_editing', 'photo_restoration'],
-    costPerImage: 0.025,
+    costPerImage: 0,
     requiresVPN: false,
     region: 'domestic',
     status: 'online',
     latency: 1.7,
     apiKeyId: 'rishin',
+    freeTier: true,
+    officialSite: 'https://ai.sensetime.com/',
+    quotaNotes: '日日新体验版：注册即享 200 张/天 免费额度，可叠加活动券',
   },
 ];
 

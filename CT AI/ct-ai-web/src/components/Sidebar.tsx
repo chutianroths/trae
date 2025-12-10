@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Folder, Boxes, ChevronRight, Sparkles, ShieldAlert } from 'lucide-react';
+import { Folder, Boxes, ChevronRight, Sparkles, ShieldAlert, File, Clock } from 'lucide-react';
 import { EDIT_MODULES, AI_MODELS } from '../types';
 import type { ModuleCategory, EditModule } from '../types';
 import { useAppStore } from '../lib/store';
@@ -8,6 +8,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
+import { Card } from './ui/card';
 import {
   Dialog,
   DialogContent,
@@ -23,7 +24,17 @@ import { Switch } from './ui/switch';
 export function Sidebar() {
   const [activeTab, setActiveTab] = useState<'modules' | 'projects' | 'templates' | 'history'>('modules');
   const [selectedCategory, setSelectedCategory] = useState<ModuleCategory | 'all'>('all');
-  const { addStep, selectedModel, setSelectedModel, customModules, addCustomModule } = useAppStore();
+  const {
+    addStep,
+    selectedModel,
+    setSelectedModel,
+    customModules,
+    addCustomModule,
+    projects,
+    currentProject,
+    loadProject,
+    apiKeys,
+  } = useAppStore();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [formState, setFormState] = useState<{
     id?: string;
@@ -264,9 +275,86 @@ export function Sidebar() {
 
             {activeTab === 'projects' && (
               <div className="p-4">
-                <p className="text-center text-gray-500">
-                  暂无项目
-                </p>
+                {projects.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Folder className="mx-auto size-12 mb-4 opacity-50" />
+                    <p>暂无项目</p>
+                    <p className="text-sm mt-2">请在"文件"菜单中创建新项目</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="mb-2 text-gray-500">已保存的项目 ({projects.length})</p>
+                    {projects.map((project) => (
+                      <Card
+                        key={project.id}
+                        className={`p-3 cursor-pointer transition-all hover:shadow-md ${
+                          currentProject?.id === project.id
+                            ? 'ring-2 ring-purple-600 bg-purple-50'
+                            : 'hover:bg-gray-50'
+                        }`}
+                        onClick={() => {
+                          loadProject(project.id);
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            loadProject(project.id);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-base mb-1">{project.name}</h4>
+                            <div className="flex items-center gap-3 text-sm text-gray-600 mb-2">
+                              <span className="flex items-center gap-1">
+                                <File className="size-3" />
+                                {project.steps.length} 个步骤
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="size-3" />
+                                {new Date(project.updatedAt).toLocaleDateString('zh-CN')}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {project.originalImage && (
+                                <Badge variant="secondary" className="text-xs pointer-events-none">
+                                  已上传图片
+                                </Badge>
+                              )}
+                              {project.resultImage && (
+                                <Badge variant="secondary" className="text-xs pointer-events-none">
+                                  已生成结果
+                                </Badge>
+                              )}
+                              <Badge
+                                variant={
+                                  project.status === 'completed'
+                                    ? 'default'
+                                    : project.status === 'processing'
+                                      ? 'secondary'
+                                      : project.status === 'error'
+                                        ? 'destructive'
+                                        : 'outline'
+                                }
+                                className="text-xs pointer-events-none"
+                              >
+                                {project.status === 'draft' && '草稿'}
+                                {project.status === 'processing' && '处理中'}
+                                {project.status === 'completed' && '已完成'}
+                                {project.status === 'error' && '错误'}
+                              </Badge>
+                            </div>
+                          </div>
+                          {currentProject?.id === project.id && (
+                            <span className="ml-2 text-purple-600 font-medium text-sm">当前</span>
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </ScrollArea>
@@ -280,28 +368,62 @@ export function Sidebar() {
             onChange={(e) => setSelectedModel(e.target.value)}
             className="w-full rounded-lg border px-3 py-2"
           >
-            {AI_MODELS.map(model => (
-              <option key={model.name} value={model.name}>
-                {model.name} ({model.region === 'domestic' ? '国内' : '国外'})
-                {model.requiresVPN && ' 🔒'}
-              </option>
-            ))}
+            {AI_MODELS.map(model => {
+              const hasKey = Boolean(apiKeys[model.apiKeyId]);
+              const regionLabel = model.region === 'domestic' ? '国内' : '国外';
+              const vpnTag = model.requiresVPN ? '·需VPN' : '';
+              const freeTag = model.freeTier ? '·Free Tier' : '';
+              const keyTag = hasKey ? '' : '·未配置API';
+              return (
+                <option key={model.id} value={model.name}>
+                  {model.name} ({regionLabel}{freeTag}{vpnTag}{keyTag})
+                </option>
+              );
+            })}
           </select>
           {activeModel && (
             <div className="mt-3 space-y-2 text-sm text-gray-600">
-              <div className="flex items-center justify-between">
-                <span>
-                  地区: {activeModel.region === 'domestic' ? '国内' : '国外'} · 延迟约 {activeModel.latency}s
-                </span>
-                <span className="flex items-center gap-1 text-green-600">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={activeModel.region === 'domestic' ? 'default' : 'outline'}>
+                  {activeModel.region === 'domestic' ? '国内服务' : '国外服务'}
+                </Badge>
+                {activeModel.freeTier && (
+                  <Badge variant="secondary">
+                    Free Tier
+                  </Badge>
+                )}
+                <Badge variant={activeModel.requiresVPN ? 'destructive' : 'outline'}>
+                  {activeModel.requiresVPN ? '需VPN' : '无需VPN'}
+                </Badge>
+                <Badge variant={apiKeys[activeModel.apiKeyId] ? 'outline' : 'destructive'}>
+                  {apiKeys[activeModel.apiKeyId] ? 'API已配置' : 'API未配置'}
+                </Badge>
+                <span className="ml-auto flex items-center gap-1 text-green-600">
                   <span className="size-2 rounded-full bg-green-500" />
-                  在线
+                  在线 · 延迟约 {activeModel.latency}s
                 </span>
               </div>
 
               <p>
                 能力: {activeModel.capabilities.map((item) => item.replace(/_/g, ' ')).join(' / ')}
               </p>
+
+              {activeModel.quotaNotes && (
+                <p className="rounded-lg bg-gray-50 p-2 text-xs text-gray-600">
+                  {activeModel.quotaNotes}
+                </p>
+              )}
+
+              {activeModel.officialSite && (
+                <a
+                  href={activeModel.officialSite}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  查看官方接入指南
+                </a>
+              )}
 
               {activeModel.requiresVPN && (
                 <div className="flex items-start gap-2 rounded-lg bg-red-50 p-2 text-red-600">

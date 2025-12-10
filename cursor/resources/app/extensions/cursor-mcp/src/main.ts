@@ -6,15 +6,23 @@ function getLogger(identifier: string) {
 	return McpLogger.getLogger(identifier);
 }
 import * as vscode from 'vscode';
+import * as os from 'os';
 import { registerContext } from './commands/mcpCommands.js';
 import { MCPOAuthClientProvider } from './commands/mcp/oauth.js';
 import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { EverythingProviderCreator } from './everythingProvider.js';
+import { VscodeMcpLease } from './mcpLease.js';
+import type { McpLease } from '@anysphere/agent-exec';
 
 
 const deactivateTasks: { (): Promise<any> }[] = [];
+
+export interface CursorMcpExtensionApi {
+	getMcpLease(): McpLease;
+}
+
 // this method is called when vs code is activated
-export function activate(context: ExtensionContext) {
+export function activate(context: ExtensionContext): CursorMcpExtensionApi {
 	const everythingProviderCreator = new EverythingProviderCreator(context);
 	deactivateTasks.push(async () => everythingProviderCreator.dispose());
 
@@ -77,7 +85,8 @@ export function activate(context: ExtensionContext) {
 
 				// Exchange the code for tokens via the SDK helper
 				try {
-					await auth(new MCPOAuthClientProvider(context, serverUrl, identifier, () => { }), {
+					const provider = new MCPOAuthClientProvider(context, serverUrl, identifier, () => {});
+					await auth(provider, {
 						serverUrl,
 						authorizationCode: code,
 					});
@@ -95,6 +104,11 @@ export function activate(context: ExtensionContext) {
 	});
 	deactivateTasks.push(async () => uriHandlerDisp.dispose());
 
+	const mcpLease = new VscodeMcpLease(context);
+
+	return {
+		getMcpLease: () => mcpLease,
+	};
 }
 
 export async function deactivate(): Promise<void> {

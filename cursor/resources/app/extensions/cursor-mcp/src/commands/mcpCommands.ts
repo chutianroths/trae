@@ -6,18 +6,261 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { CallToolResultSchema, Progress, ProgressNotification, ProgressNotificationSchema, ToolListChangedNotification, ToolListChangedNotificationSchema, ListRootsRequest, ListRootsRequestSchema, ElicitRequest, ElicitRequestSchema, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { MCPActions, MCPServerInfo, MCPServerStatus } from '@cursor/types';
 import { McpLogger } from '../utils/logger.js';
 import { ExtraContext, registerAction } from './registry.js';
-import { MCPOAuthClientProvider } from './mcp/oauth.js';
+import { MCPOAuthClientProvider, OAuthClientInformationWithMetadata } from './mcp/oauth.js';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 // Type-only import for MCP schema definitions
 import type { Prompt as MCPTargetPrompt, PromptArgument as MCPTargetPromptArgument } from '@modelcontextprotocol/sdk/types.js';
+import type { McpClient, McpClientState, McpToolDefinition, McpToolResult, McpToolResultContent, ScopedMcpElicitationProvider } from '@anysphere/agent-exec';
+import type { Context } from '@anysphere/context';
+import { McpManager } from '@anysphere/local-exec';
+import type { JsonValue } from '@bufbuild/protobuf';
 
 /** Get a server-specific logger instance */
 function getLogger(identifier: string) {
 	return McpLogger.getLogger(trim(identifier));
+}
+
+function stripIdentifierPrefix(identifier: string): string {
+	if (identifier.startsWith('user-')) {
+		return identifier.slice('user-'.length);
+	}
+
+	if (identifier.startsWith('project-')) {
+		const firstDashIndex = identifier.indexOf('-');
+		const secondDashIndex = identifier.indexOf('-', firstDashIndex + 1);
+		if (secondDashIndex > 0) {
+			return identifier.slice(secondDashIndex + 1);
+		}
+		return identifier.slice('project-'.length);
+	}
+
+	return identifier;
+}
+
+class ClientToMcpClientAdapter implements McpClient {
+	constructor(
+		private readonly client: Client,
+		public readonly serverName: string,
+		private readonly identifier: string
+	) {}
+
+	async getTools(_ctx: Context): Promise<McpToolDefinition[]> {
+		const capabilities = this.client.getServerCapabilities() ?? { tools: false };
+		if (!capabilities.tools) {
+			return [];
+		}
+
+		const toolsResult = await this.client.listTools();
+		if (!toolsResult || !toolsResult.tools || !Array.isArray(toolsResult.tools)) {
+			getLogger(this.identifier).error(`Invalid tools response from server: ${JSON.stringify(toolsResult)}`);
+			return [];
+		}
+
+		return toolsResult.tools.map((tool: Tool) => ({
+			name: tool.name,
+			description: tool.description || undefined,
+			inputSchema: tool.inputSchema as JsonValue,
+			outputSchema: tool.outputSchema as JsonValue,
+		}));
+	}
+
+	async callTool(
+		_ctx: Context,
+		name: string,
+		args: Record<string, JsonValue>,
+		toolCallId?: string,
+		elicitationProvider?: ScopedMcpElicitationProvider
+	): Promise<McpToolResult> {
+		// Get original tool name from sanitized name
+		const originalName = toolNameMap.get(name) || name;
+
+		if (elicitationProvider) {
+			currentElicitationProvider.set(this.identifier, elicitationProvider);
+		}
+
+		try {
+			const progressToken = toolCallId;
+			const result = await this.client.callTool({
+				name: originalName,
+				arguments: args as Record<string, unknown>,
+				_meta: {
+					progressToken
+				}
+			}, CallToolResultSchema, {
+				onprogress: (progress: Progress) => {
+					getLogger(this.identifier).info(`ProgressNotification received for ${progressToken}`, progress);
+					vscode.commands.executeCommand('mcp.progressNotification', { progressToken, notification: progress });
+				},
+			});
+
+			return {
+				content: result.content as McpToolResultContent,
+				isError: result.error !== undefined,
+			};
+		} finally {
+			if (elicitationProvider) {
+				currentElicitationProvider.delete(this.identifier);
+			}
+		}
+	}
+
+	async getInstructions(_ctx: Context): Promise<string | undefined> {
+		return await this.client.getInstructions();
+	}
+
+	async getState(_ctx: Context): Promise<McpClientState> {
+		const status = lastStatusMap.get(this.identifier);
+
+		if (!status) {
+			return { kind: 'loading' };
+		}
+
+		switch (status.type) {
+			case 'initializing':
+			case 'disconnected':
+				return { kind: 'loading' };
+			case 'needsAuth':
+				return {
+					kind: 'requires_authentication',
+					url: status.authorizationUrl,
+					callback: async (_code: string) => {
+						getLogger(this.identifier).info(`OAuth callback received via getState`);
+					},
+				};
+			case 'connected':
+				return { kind: 'ready' };
+			case 'error':
+				return { kind: 'ready' };
+			default:
+				return { kind: 'loading' };
+		}
+	}
+
+	async listResources(_ctx: Context): Promise<{
+		resources: Array<{
+			uri: string;
+			name?: string;
+			description?: string;
+			mimeType?: string;
+			annotations?: Record<string, unknown>;
+		}>;
+	}> {
+		const capabilities = this.client.getServerCapabilities() ?? { resources: false };
+		if (!capabilities.resources) {
+			return { resources: [] };
+		}
+
+		const resourcesResult = await this.client.listResources();
+		if (!resourcesResult || !resourcesResult.resources || !Array.isArray(resourcesResult.resources)) {
+			getLogger(this.identifier).error(`Invalid resources response from server: ${JSON.stringify(resourcesResult)}`);
+			return { resources: [] };
+		}
+
+		return {
+			resources: resourcesResult.resources.map(resource => ({
+				uri: resource.uri,
+				name: resource.name,
+				description: resource.description,
+				mimeType: resource.mimeType,
+				annotations: resource.annotations as Record<string, unknown> | undefined,
+			})),
+		};
+	}
+
+	async readResource(
+		_ctx: Context,
+		args: { uri: string }
+	): Promise<{
+		contents: Array<{
+			uri?: string;
+			mimeType?: string;
+			text?: string;
+			blob?: string;
+			name?: string;
+			description?: string;
+			annotations?: Record<string, unknown>;
+		}>;
+	}> {
+		const result = await this.client.readResource({ uri: args.uri });
+		return {
+			contents: result.contents || [],
+		};
+	}
+
+	async listPrompts(_ctx: Context): Promise<Array<{
+		name: string;
+		description?: string;
+		arguments?: Array<{
+			name: string;
+			description?: string;
+			required?: boolean;
+		}>;
+	}>> {
+		const capabilities = this.client.getServerCapabilities() ?? { prompts: false };
+		if (!capabilities.prompts) {
+			return [];
+		}
+
+		const promptsResult = await this.client.listPrompts();
+		if (!promptsResult || !promptsResult.prompts || !Array.isArray(promptsResult.prompts)) {
+			getLogger(this.identifier).error(`Invalid prompts response from server: ${JSON.stringify(promptsResult)}`);
+			return [];
+		}
+
+		return promptsResult.prompts.map((prompt: MCPTargetPrompt) => ({
+			name: prompt.name,
+			description: prompt.description || undefined,
+			arguments: prompt.arguments?.map(arg => ({
+				name: arg.name,
+				description: arg.description || undefined,
+				required: arg.required,
+			})),
+		}));
+	}
+
+	async getPrompt(
+		_ctx: Context,
+		name: string,
+		args?: Record<string, string>
+	): Promise<{
+		messages: Array<{
+			role: 'user' | 'assistant' | 'system';
+			content: Array<{
+				type: 'text';
+				text: string;
+			} | {
+				type: 'image';
+				data: string;
+				mimeType?: string;
+			}>;
+		}>;
+	}> {
+		const result = await this.client.getPrompt({
+			name,
+			arguments: args || {},
+		});
+
+		const messages = result.messages?.map((msg) => {
+			const msgContent = Array.isArray(msg.content) ? msg.content : [];
+			return {
+				role: msg.role as 'user' | 'assistant' | 'system',
+				content: msgContent.map((content) => {
+					if (content.type === 'text') {
+						return { type: 'text' as const, text: content.text || '' };
+					} else if (content.type === 'image') {
+						return { type: 'image' as const, data: content.data || '', mimeType: content.mimeType };
+					}
+					return { type: 'text' as const, text: '' };
+				}),
+			};
+		}) || [];
+
+		return { messages };
+	}
 }
 
 interface StdioServerInstance {
@@ -59,8 +302,14 @@ const pendingElicitationRequests = new Map<string, (response: any) => void>();
 /** Map from server identifier to current toolCallId for that server */
 const currentToolCallContext = new Map<string, string>();
 
+/** Map from server identifier to current elicitation provider for that server */
+const currentElicitationProvider = new Map<string, ScopedMcpElicitationProvider>();
+
 let extensionContext: vscode.ExtensionContext | undefined;
 let cachedUserAgent: string | undefined;
+
+// Local McpManager instance that tracks all clients
+const mcpManager = new McpManager({});
 
 export function registerContext(context: vscode.ExtensionContext) {
 	extensionContext = context;
@@ -97,7 +346,7 @@ function getUserAgent(): string {
 // a `needsAuth` state with a transient connection error).
 const lastStatusMap = new Map<string, MCPServerStatus>();
 
-function updateStatus(identifier: string, status: MCPServerStatus) {
+export function updateStatus(identifier: string, status: MCPServerStatus) {
 	// Persist latest status in the local map *before* forwarding to the UI so
 	// that asynchronous handlers (like `client.onerror`) can reliably inspect
 	// the current state without racing.
@@ -133,6 +382,10 @@ function cleanupServer(identifier: string): void {
 	}
 	servers.delete(identifier);
 	lastStatusMap.delete(identifier);
+	currentElicitationProvider.delete(identifier);
+
+	// Remove from McpManager
+	mcpManager.deleteClient(identifier);
 
 	// Clean up any pending elicitation requests for this server
 	for (const [requestId, resolve] of pendingElicitationRequests.entries()) {
@@ -220,6 +473,31 @@ async function getOrCreateClient(identifier: string, serverInfo: MCPServerInfo):
 	// Set up elicitation request handler
 	client.setRequestHandler(ElicitRequestSchema, async (request: ElicitRequest) => {
 		getLogger(identifier).info(`ElicitRequest received from server: ${request.params.message}`);
+
+		const elicitationProvider = currentElicitationProvider.get(identifier);
+		if (elicitationProvider) {
+			try {
+				const response = await elicitationProvider.elicit({
+					message: request.params.message,
+					requestedSchema: request.params.requestedSchema as {
+						type: "object";
+						properties: Record<string, unknown>;
+						required?: string[];
+					},
+				});
+
+				return {
+					action: response.action,
+					content: response.content,
+				} as const;
+			} catch (error) {
+				getLogger(identifier).error(`Error in elicitation provider:`, error);
+				return {
+					action: "decline" as const,
+				};
+			}
+		}
+
 		return new Promise((resolve) => {
 			const requestId = `${identifier}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 			const currentToolCallId = currentToolCallContext.get(identifier);
@@ -300,16 +578,27 @@ async function getOrCreateClient(identifier: string, serverInfo: MCPServerInfo):
 		return existingClient.client;
 	}
 
+	let serverInstance: ServerInstance;
 	if (serverInfo.type === 'streamableHttp') {
 		getLogger(identifier).info(`Storing streamableHttp client`);
-		servers.set(identifier, { transport: transport as StreamableHTTPClientTransport, client, type: 'streamableHttp', serverInfo });
+		serverInstance = { transport: transport as StreamableHTTPClientTransport, client, type: 'streamableHttp', serverInfo };
 	} else if (serverInfo.type === 'sse') {
 		getLogger(identifier).info(`Storing SSE client`);
-		servers.set(identifier, { transport: transport as SSEClientTransport, client, type: 'sse', serverInfo });
+		serverInstance = { transport: transport as SSEClientTransport, client, type: 'sse', serverInfo };
 	} else {
 		getLogger(identifier).info(`Storing stdio client`, identifier);
-		servers.set(identifier, { transport: transport as StdioClientTransport, client, type: 'stdio', serverInfo });
+		serverInstance = { transport: transport as StdioClientTransport, client, type: 'stdio', serverInfo };
 	}
+
+	servers.set(identifier, serverInstance);
+
+	// Create adapter and add to McpManager
+	// Strip prefix patterns from identifier for display name
+	const displayName = stripIdentifierPrefix(identifier);
+	const adapter = new ClientToMcpClientAdapter(client, displayName, identifier);
+
+	mcpManager.setClient(identifier, adapter);
+
 	return client;
 }
 
@@ -319,10 +608,29 @@ async function createAndConnectTransportFor(identifier: string, serverInfo: MCPS
 		if (!extensionContext) {
 			throw new Error('Extension context is not set');
 		}
+		const staticClientInfo = ('auth' in serverInfo && serverInfo.auth && serverInfo.auth.CLIENT_ID)
+			? { client_id: serverInfo.auth.CLIENT_ID, ...(serverInfo.auth.CLIENT_SECRET ? { client_secret: serverInfo.auth.CLIENT_SECRET } : {}) }
+			: undefined;
+
 		const authProvider = new MCPOAuthClientProvider(extensionContext, serverInfo.serverUrl, identifier, (authorizationUrl: URL) => {
 			getLogger(identifier).info(`OAuth provider needs auth callback during connection`);
 			updateStatus(identifier, { type: 'needsAuth', authorizationUrl: authorizationUrl.href });
-		});
+		}, staticClientInfo);
+
+		// Persist static client information (including redirect URI) so the callback flow can load it
+		if (staticClientInfo) {
+			try {
+				await authProvider.saveClientInformation({
+					...staticClientInfo,
+					redirect_uris: [authProvider.redirectUrl],
+					grant_types: ["authorization_code", "refresh_token"],
+					response_types: ["code"],
+				} as OAuthClientInformationWithMetadata);
+				getLogger(identifier).info(`Persisted static OAuth client information for callback flow`);
+			} catch (e) {
+				getLogger(identifier).warn(`Failed to persist static OAuth client information`, e as Error);
+			}
+		}
 		const transport = new StreamableHTTPClientTransport(new URL(serverInfo.serverUrl), {
 			authProvider,
 			requestInit: {
@@ -590,7 +898,7 @@ async function listOfferings(identifier: string) {
 	}
 }
 
-async function callTool(identifier: string, name: string, args?: Record<string, unknown>, toolCallId?: string) {
+async function callTool(identifier: string, name: string, args?: Record<string, unknown>, toolCallId?: string, elicitationProvider?: ScopedMcpElicitationProvider) {
 	const serverInstance = servers.get(identifier);
 	if (!serverInstance) {
 		getLogger(identifier).error(`No server info found`);
@@ -605,6 +913,10 @@ async function callTool(identifier: string, name: string, args?: Record<string, 
 	getLogger(identifier).info(`Calling tool '${originalName}' with toolCallId: ${toolCallId}`);
 	if (args) {
 		getLogger(identifier).debug(`Tool arguments:`, args);
+	}
+
+	if (elicitationProvider) {
+		currentElicitationProvider.set(identifier, elicitationProvider);
 	}
 
 	try {
@@ -650,6 +962,30 @@ async function callTool(identifier: string, name: string, args?: Record<string, 
 		}
 
 		return { result: { error: error.message } };
+	} finally {
+		if (elicitationProvider) {
+			currentElicitationProvider.delete(identifier);
+		}
+	}
+}
+
+async function getInstructions(identifier: string) {
+	const serverInstance = servers.get(identifier);
+	if (!serverInstance) {
+		getLogger(identifier).error(`No server info found`);
+		throw new Error('No server info found');
+	}
+
+	const serverInfo = serverInstance.serverInfo;
+
+	try {
+		const client = await getOrCreateClient(identifier, serverInfo);
+
+		const result = await client.getInstructions();
+		return { instructions: result };
+	} catch (error) {
+		getLogger(identifier).error(`Error fetching instructions:`, error);
+		return { instructions: '' };
 	}
 }
 
@@ -722,6 +1058,11 @@ registerAction(MCPActions.CallTool, async (args: { identifier: string, name: str
 	return callTool(args.identifier, args.name, args.args, args.toolCallId);
 });
 
+registerAction(MCPActions.GetInstructions, async (args: { identifier: string }, extra: ExtraContext) => {
+	getLogger(args.identifier).info(`Handling GetInstructions action`);
+	return getInstructions(args.identifier);
+});
+
 registerAction(MCPActions.GetPrompt, async (args: { identifier: string, name: string, args?: Record<string, unknown> }, extra: ExtraContext) => {
 	McpLogger.info(`${trim(args.identifier)}: Handling GetPrompt action for prompt '${args.name}'`);
 	return getPrompt(args.identifier, args.name, args.args);
@@ -755,6 +1096,11 @@ export function deleteClient(identifier: string): void {
 	cleanupServer(identifier);
 }
 
+// Export mcpManager for use in mcpLease
+export function getMcpManager(): McpManager {
+	return mcpManager;
+}
+
 registerAction(MCPActions.ReloadClient, async (args: { identifier: string, serverInfo: MCPServerInfo }, extra: ExtraContext) => {
 	getLogger(args.identifier).info(`Handling ReloadClient action`);
 
@@ -777,10 +1123,10 @@ registerAction(MCPActions.LogoutServer, async (args: { identifier: string }, ext
 
 	try {
 		// Get the OAuth client provider for this server
-		const serverUrl = extra.context.globalState.get<string>(`[${args.identifier}] ${'mcp_server_url'}`);
+		const serverUrl: string = extra.context.globalState.get<string>(`[${args.identifier}] ${'mcp_server_url'}`) ?? '';
 		if (!serverUrl) {
-			getLogger(args.identifier).error(`No stored server URL for logout`);
-			return { success: false };
+			// We can still clear secrets/state using the identifier-scoped keys even without a stored server URL
+			getLogger(args.identifier).warn(`No stored server URL for logout; proceeding to clear OAuth state using identifier only`);
 		}
 
 		const oauthProvider = new MCPOAuthClientProvider(extra.context, serverUrl, args.identifier, (authorizationUrl: URL) => {

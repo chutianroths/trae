@@ -4,7 +4,7 @@
 	"licenseUrl": "https://cursor.com/license.txt",
 	"serverGreeting": [],
 	"serverLicense": [],
-	"vscodeVersion": "1.99.3",
+	"vscodeVersion": "1.105.1",
 	"serverLicensePrompt": "",
 	"serverApplicationName": "cursor-server",
 	"serverDataFolderName": ".cursor-server",
@@ -40,9 +40,6 @@
 	},
 	"nodejsRepository": "https://nodejs.org",
 	"extensionMaxVersions": {
-		"ms-python.python": {
-			"maxVersion": "2025.6.1"
-		},
 		"ms-vscode.cpptools": {
 			"maxVersion": "1.23.6",
 			"minVersion": "1.20.5"
@@ -50,6 +47,9 @@
 		"ms-python.vscode-pylance": {
 			"maxVersion": "2024.8.1",
 			"minVersion": "2024.4.1"
+		},
+		"snowflake.snowflake-vsc": {
+			"minVersion": "1.20.1"
 		},
 		"ms-vscode-remote.remote-containers": {
 			"maxVersion": "0.394.0",
@@ -222,7 +222,7 @@
 		"https://www.cursor.so",
 		"https://cursor.com",
 		"https://www.cursor.com",
-		"https://docs.cursor.com",
+		"https://cursor.com/docs",
 		"https://docs.cursor.sh",
 		"https://www.cursor.sh",
 		"https://changelog.cursor.sh",
@@ -2438,13 +2438,14 @@
 		"rust-lang.rust-analyzer",
 		"Shopify.ruby-lsp"
 	],
-	"version": "1.7.44",
+	"version": "2.1.50",
 	"removeTelemetryMachineId": true,
 	"enabledTelemetryLevels": {
 		"error": true,
 		"usage": true
 	},
 	"enableTelemetry": true,
+	"simulateProdOnDev": false,
 	"openToWelcomeMainPage": true,
 	"removeLinesBeforeCompilingIfTheyContainTheseWords": [
 		"__GULPFILE_REMOVE_LINE_BEFORE_COMPILING____EXTENSION_IS_DEV__",
@@ -2486,18 +2487,19 @@
 		"__GULPFILE_REMOVE_LINE_BEFORE_COMPILING____disable_performance_events__",
 		"__GULPFILE_REMOVE_LINE_BEFORE_COMPILING____allow_skip_privacy_mode_grace_period__",
 		"__GULPFILE_REMOVE_LINE_BEFORE_COMPILING____disable_kill_all_modes_and_surface_bg__",
-		"__GULPFILE_REMOVE_LINE_BEFORE_COMPILING____disable_statsig__"
+		"__GULPFILE_REMOVE_LINE_BEFORE_COMPILING____disable_statsig__",
+		"__GULPFILE_REMOVE_LINE_BEFORE_COMPILING____disable_dev_backend_and_login_argv_args__"
 	],
-	"commit": "9d178a4a5589981b62546448bb32920a8219a5d0",
-	"realCommit": "9d178a4a5589981b62546448bb32920a8219a5de",
-	"date": "2025-10-10T15:43:37.500Z",
+	"commit": "56f0a83df8e9eb48585fcc4858a9440db4cc7770",
+	"realCommit": "56f0a83df8e9eb48585fcc4858a9440db4cc7771",
+	"date": "2025-12-06T23:39:52.834Z",
 	"checksums": {
-		"vs/base/parts/sandbox/electron-sandbox/preload.js": "Sfe1rJ9ZZJEhyg1ggLqHMWiEPFDiQVvkhVeNwiGhAXk",
-		"vs/workbench/workbench.desktop.main.js": "BuIwYsAf+IluJtr5NPMSPU29EW72fLIQty4EiYa1oWo",
-		"vs/workbench/workbench.desktop.main.css": "+bPUrdhMfFWMaSwAHsgjO0oyaKMK3cTJQ2zTNDQExcg",
-		"vs/workbench/api/node/extensionHostProcess.js": "XKNrQQ5hygapBC9OCJeE4XXmw0hj1vgR4F9e1kHh4Ek",
+		"vs/base/parts/sandbox/electron-sandbox/preload.js": "d0wptgFXr0Lsd2jU3C+TPLThE9h7N9RM1WJvQe4TFCc",
+		"vs/workbench/workbench.desktop.main.js": "rPgVx3nDd7bl9+v4Px4Xo3J+cfxq3Iz0yaG/FjEtYLI",
+		"vs/workbench/workbench.desktop.main.css": "kl6Lgw8giPkPVFaNqS14ytcUmBU1UVUh84yzE7hjJqw",
+		"vs/workbench/api/node/extensionHostProcess.js": "5BMsGeOixAnNCUcJ0NaBYHlTVv8hXX7w7iO17jxI1wM",
 		"vs/code/electron-sandbox/workbench/workbench.html": "JUa09KdEyGvdZnnBvZvh4yykh0ATGAWPDmYq2Wzp3rQ",
-		"vs/code/electron-sandbox/workbench/workbench.js": "Zh7ajvz7+3r745qB9RZBPN4yElxhaLXVjWa9C5EsehY"
+		"vs/code/electron-sandbox/workbench/workbench.js": "Rf/QfHlssJ+S0yC1TqJJGmDI+Mobify9xX/P7cc8YXc"
 	},
 	"target": "system"
 }

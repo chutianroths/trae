@@ -1,7 +1,21 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { generateModuleResult, getModules, mapToModulePreviews, seedModules } from "@/services/moduleService";
 import { jsonError, jsonSuccess } from "@/utils/apiResponse";
+
+/**
+ * Handles CORS preflight requests.
+ */
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
+}
 
 const sampleModules = [
   {
@@ -101,7 +115,7 @@ export async function GET(request: NextRequest) {
     const result = await getModules(searchParams);
     const previews = mapToModulePreviews(result.items);
 
-    return jsonSuccess({
+    const response = jsonSuccess({
       pagination: {
         total: result.total,
         page: result.page,
@@ -109,9 +123,15 @@ export async function GET(request: NextRequest) {
       },
       items: previews,
     });
+
+    // Add CORS headers
+    response.headers.set("Access-Control-Allow-Origin", "*");
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch modules";
-    return jsonError(message, 500);
+    const response = jsonError(message, 500);
+    response.headers.set("Access-Control-Allow-Origin", "*");
+    return response;
   }
 }
 
@@ -120,16 +140,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const prompt = body?.prompt;
     if (typeof prompt !== "string" || prompt.trim().length === 0) {
-      return jsonError("Prompt is required", 400);
+      const response = jsonError("Prompt is required", 400);
+      response.headers.set("Access-Control-Allow-Origin", "*");
+      return response;
     }
 
     const imageData = await generateModuleResult(prompt);
-    return jsonSuccess({
+    const response = jsonSuccess({
       image: imageData,
     });
+    
+    // Add CORS headers
+    response.headers.set("Access-Control-Allow-Origin", "*");
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate module result";
-    return jsonError(message, 500);
+    const response = jsonError(message, 500);
+    response.headers.set("Access-Control-Allow-Origin", "*");
+    return response;
   }
 }
 

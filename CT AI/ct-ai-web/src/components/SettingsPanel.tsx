@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Card } from './ui/card';
 import { AI_MODELS } from '../types';
 import { ScrollArea } from './ui/scroll-area';
+import { Badge } from './ui/badge';
 
 export function SettingsPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const {
@@ -196,6 +197,7 @@ export function SettingsPanel({ open, onOpenChange }: { open: boolean; onOpenCha
                 <div className="space-y-4 pb-2">
                   {modelKeyInputs.map((model) => {
                     const inputId = `${model.apiKeyId}-key`;
+                    const keyConfigured = Boolean(apiKeys[model.apiKeyId]);
                     return (
                       <div
                         className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
@@ -209,6 +211,19 @@ export function SettingsPanel({ open, onOpenChange }: { open: boolean; onOpenCha
                             供应商: {model.provider} · {model.region === 'domestic' ? '国内服务' : '国外服务'}
                             {model.requiresVPN ? '（需VPN）' : ''}
                           </p>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant={model.region === 'domestic' ? 'default' : 'outline'}>
+                              {model.region === 'domestic' ? '国内直连' : '需代理网络'}
+                            </Badge>
+                            {model.freeTier && (
+                              <Badge variant="secondary">
+                                Free Tier
+                              </Badge>
+                            )}
+                            <Badge variant={keyConfigured ? 'outline' : 'destructive'}>
+                              {keyConfigured ? 'API 已保存' : '尚未配置'}
+                            </Badge>
+                          </div>
                         </div>
                         <input
                           id={inputId}
@@ -222,6 +237,21 @@ export function SettingsPanel({ open, onOpenChange }: { open: boolean; onOpenCha
                         <p className="text-xs text-gray-400">
                           能力范围: {model.capabilities.map((item) => item.replace(/_/g, ' ')).join(' / ')}
                         </p>
+                        {model.quotaNotes && (
+                          <p className="text-xs text-gray-500">
+                            配额提示：{model.quotaNotes}
+                          </p>
+                        )}
+                        {model.officialSite && (
+                          <a
+                            href={model.officialSite}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            查看官方文档
+                          </a>
+                        )}
                       </div>
                     );
                   })}

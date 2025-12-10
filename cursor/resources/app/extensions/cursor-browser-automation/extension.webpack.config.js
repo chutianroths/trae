@@ -8,8 +8,9 @@
 'use strict';
 
 const withDefaults = require('../cursor.webpack.config');
+const path = require('path');
 
-module.exports = withDefaults({
+const config = withDefaults({
 	context: __dirname,
 	entry: {
 		extension: './src/extension.ts',
@@ -24,4 +25,12 @@ module.exports = withDefaults({
 	},
 	ignoreWarnings: [/Critical dependency: the request of a dependency is an expression/],
 });
+
+// Add bufbuild paths to resolve
+config.resolve = config.resolve || {};
+config.resolve.alias = config.resolve.alias || {};
+config.resolve.alias['external/bufbuild/protobuf.js'] = path.resolve(__dirname, '../../src/external/bufbuild/protobuf/index');
+config.resolve.alias['external/bufbuild/connect.js'] = path.resolve(__dirname, './node_modules/@connectrpc/connect');
+
+module.exports = config;
 

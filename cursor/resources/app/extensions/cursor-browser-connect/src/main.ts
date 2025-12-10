@@ -63,7 +63,6 @@ class BrowserClientManager {
  */
 class BrowserConnectMcpProvider implements McpProvider {
 	public readonly id = 'cursor-browser-connect';
-	public readonly featureGateName = "browser_connect";
 
 	private tools = createMcpTools({
 		get_clients: {
@@ -125,6 +124,10 @@ class BrowserConnectMcpProvider implements McpProvider {
 
 	async dispose(): Promise<void> {
 		// Nothing to dispose - we don't own the server or clients
+	}
+
+	setFeatureGates(featureGates: Record<string, boolean>): void {
+		// Not implemented as there are no feature gates for this provider
 	}
 }
 

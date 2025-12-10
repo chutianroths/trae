@@ -1,6 +1,11 @@
-import { getGeminiModel } from "@/lib/aiClient";
 import { z } from "zod";
 
+import { env } from "@/config/env";
+import {
+  createImageGenerator,
+  getGeneratorType,
+  type ImageGenerationOptions,
+} from "@/lib/imageGenerators";
 import {
   createModule,
   findModuleByModuleId,
@@ -149,31 +154,77 @@ export function mapToModulePreviews(modules: ModuleDocument[]): ModulePreview[] 
 }
 
 /**
- * Generates a module result preview by calling Gemini with the given prompt.
+ * Generates a module result preview by calling the configured image generation API.
  *
- * @param prompt - Text prompt to send to the Gemini image endpoint.
- * @returns Base64 encoded image string.
+ * Currently uses Gemini 2.5 Flash Image Preview as the default image generator.
+ * The system supports multiple image generation providers and can be extended
+ * to use other models like DALL-E 3, Stable Diffusion, etc.
+ *
+ * @param prompt - Text prompt describing the desired image.
+ * @param modelName - Optional model name to use. Defaults to "Gemini 2.5 Flash Image".
+ * @returns Base64 encoded image string (data URL).
  */
-export async function generateModuleResult(prompt: string): Promise<string> {
-  const model = getGeminiModel();
-  const result = await model.generateContent({
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: prompt }],
-      },
-    ],
-  });
+export async function generateModuleResult(
+  prompt: string,
+  modelName: string = "Gemini 2.5 Flash Image"
+): Promise<string> {
+  try {
+    // Determine the generator type from the model name
+    const generatorType = getGeneratorType(modelName);
 
-  const candidates = result.response.candidates ?? [];
-  const imagePart = candidates
-    .flatMap((candidate) => candidate.content?.parts ?? [])
-    .find((part) => part.inlineData?.mimeType?.startsWith("image/"));
+    if (!generatorType) {
+      throw new Error(
+        `Unsupported model: ${modelName}. Supported models: Gemini 2.5 Flash Image Preview, DALL-E 3`
+      );
+    }
 
-  if (!imagePart?.inlineData?.data) {
-    throw new Error("Gemini did not return image data");
+    // Get the appropriate API key based on generator type
+    let apiKey: string;
+    switch (generatorType) {
+      case "gemini-2.5-flash-image-preview":
+        apiKey = env.GEMINI_API_KEY;
+        break;
+      case "dall-e-3":
+        // TODO: Add OPENAI_API_KEY to env config when DALL-E 3 is needed
+        throw new Error("DALL-E 3 requires OPENAI_API_KEY to be configured");
+      default:
+        throw new Error(`API key not configured for generator type: ${generatorType}`);
+    }
+
+    // Create the appropriate image generator
+    const generator = createImageGenerator(generatorType, apiKey);
+
+    // Generate the image
+    const options: ImageGenerationOptions = {
+      prompt,
+      n: 1,
+      size: "1024x1024", // Default size, can be customized
+    };
+
+    const result = await generator.generate(options);
+
+    // Return the first generated image
+    if (result.images.length === 0) {
+      throw new Error("Image generator did not return any images");
+    }
+
+    return result.images[0];
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`Image generation failed (model: ${modelName}):`, errorMessage);
+    
+    // Check if it's a quota error - provide helpful context
+    if (errorMessage.includes("quota") || errorMessage.includes("429")) {
+      throw new Error(
+        `API 配额限制：${errorMessage}\n\n` +
+        `解决方案：\n` +
+        `1. 等待配额重置（通常每天重置）\n` +
+        `2. 检查配额使用情况：https://ai.dev/usage?tab=rate-limit\n` +
+        `3. 考虑升级到付费计划以获取更多配额`
+      );
+    }
+    
+    throw new Error(`Failed to generate module result: ${errorMessage}`);
   }
-
-  return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
 }
 

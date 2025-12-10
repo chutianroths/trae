@@ -5,6 +5,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { McpLogger } from '../../utils/logger.js';
 
+/**
+ * Extended OAuth client information that includes optional metadata fields
+ * that may be returned by OAuth servers in their registration response.
+ * Per RFC 7591 (OAuth 2.0 Dynamic Client Registration), servers may return
+ * client metadata in addition to the required client_id.
+ */
+export interface OAuthClientInformationWithMetadata extends OAuthClientInformation {
+	redirect_uris?: string[];
+}
+
 /** Get a server-specific logger instance */
 function getLogger(identifier: string) {
 	return McpLogger.getLogger(identifier);
@@ -15,10 +25,7 @@ If you're developing on dev and need to get cursor-dev callbacks to go to dev in
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
  */
 
-/**
- * Get the URL protocol from the product configuration (e.g., "cursor", "cursor-nightly", "cursor-dev")
- */
-function getUrlProtocol(): string {
+export function getUrlProtocol(): string {
 	try {
 		const productJsonPath = path.join(vscode.env.appRoot, 'product.json');
 		const productJson = JSON.parse(fs.readFileSync(productJsonPath, 'utf8'));
@@ -29,7 +36,13 @@ function getUrlProtocol(): string {
 	}
 }
 
-const SESSION_KEYS = {
+export function generateAuthRedirectUrl(identifier: string): string {
+	const extensionId = 'anysphere.cursor-mcp';
+	const protocol = getUrlProtocol();
+	return `${protocol}://${extensionId}/oauth/${encodeURIComponent(identifier)}/callback`;
+}
+
+export const SESSION_KEYS = {
 	CODE_VERIFIER: "mcp_code_verifier",
 	SERVER_URL: "mcp_server_url",
 	TOKENS: "mcp_tokens",
@@ -48,13 +61,20 @@ export const getServerSpecificKey = (
 export type MCPOAuthNeedsAuthCallback = (authorizationUrl: URL) => void;
 
 export class MCPOAuthClientProvider implements OAuthClientProvider {
-	constructor(private context: vscode.ExtensionContext, private serverUrl: string, private identifier: string, private readonly needsAuthCallback: MCPOAuthNeedsAuthCallback) { }
+	private readonly staticClientInformation: OAuthClientInformation | undefined;
 
-	// {protocol}://anysphere.cursor-mcp/oauth/<identifier>/callback (e.g., cursor://, cursor-nightly://, cursor-dev://)
+	constructor(
+		private context: vscode.ExtensionContext,
+		private serverUrl: string,
+		private identifier: string,
+		private readonly needsAuthCallback: MCPOAuthNeedsAuthCallback,
+		staticClientInformation?: OAuthClientInformation,
+	) {
+		this.staticClientInformation = staticClientInformation;
+	}
+
 	get redirectUrl() {
-		const extensionId = 'anysphere.cursor-mcp'; // must match the extension's publisher/name
-		const protocol = getUrlProtocol();
-		const url = `${protocol}://${extensionId}/oauth/${encodeURIComponent(this.identifier)}/callback`;
+		const url = generateAuthRedirectUrl(this.identifier);
 		getLogger(this.identifier).info("Using redirect URL", { url });
 		return url;
 	}
@@ -70,6 +90,14 @@ export class MCPOAuthClientProvider implements OAuthClientProvider {
 	}
 
 	async clientInformation(): Promise<OAuthClientInformation | undefined> {
+		// Prefer static client information when provided (static client registration)
+		if (this.staticClientInformation) {
+			getLogger(this.identifier).info("Using static OAuth client information from config", {
+				clientIdPresent: Boolean(this.staticClientInformation.client_id),
+			});
+			return this.staticClientInformation;
+		}
+
 		const key = getServerSpecificKey(
 			SESSION_KEYS.CLIENT_INFORMATION,
 			this.identifier,
@@ -84,7 +112,8 @@ export class MCPOAuthClientProvider implements OAuthClientProvider {
 			const info = await OAuthClientInformationSchema.parseAsync(JSON.parse(value));
 			// If the stored client information does not contain our current redirect
 			// URI, something changed (e.g. we updated the extension ID or path).
-			const redirects: string[] | undefined = (info as any).redirect_uris;
+			const infoWithMetadata = info as OAuthClientInformationWithMetadata;
+			const redirects: string[] | undefined = infoWithMetadata.redirect_uris;
 			if (redirects && !redirects.includes(this.redirectUrl)) {
 				getLogger(this.identifier).warn("Stored OAuth client information is out of date – re-registering");
 				await this.context.secrets.delete(key);
@@ -100,13 +129,33 @@ export class MCPOAuthClientProvider implements OAuthClientProvider {
 	}
 
 	async saveClientInformation(clientInformation: OAuthClientInformation): Promise<void> {
+		// When static credentials are configured, persist only if the provided client info
+		// matches the static credentials (so the callback flow can read it later).
+		if (this.staticClientInformation) {
+			const staticClientId: string = this.staticClientInformation.client_id;
+			const providedClientId: string = clientInformation.client_id;
+			if (staticClientId && providedClientId && staticClientId === providedClientId) {
+				getLogger(this.identifier).info("Persisting static OAuth client information for callback flow");
+				const key = getServerSpecificKey(
+					SESSION_KEYS.CLIENT_INFORMATION,
+					this.identifier,
+				);
+				await this.context.secrets.store(key, JSON.stringify(clientInformation));
+			}
+			else {
+				getLogger(this.identifier).info("Static OAuth client configured; ignoring mismatched client information save");
+			}
+			return;
+		}
+
 		const key = getServerSpecificKey(
 			SESSION_KEYS.CLIENT_INFORMATION,
 			this.identifier,
 		);
+		const clientInfoWithMetadata = clientInformation as OAuthClientInformationWithMetadata;
 		getLogger(this.identifier).info("Saving client information", {
-			redirects: (clientInformation as any)?.redirect_uris?.length ?? 0,
-			clientIdPresent: Boolean((clientInformation as any)?.client_id),
+			redirects: clientInfoWithMetadata.redirect_uris?.length ?? 0,
+			clientIdPresent: Boolean(clientInformation.client_id),
 		});
 		await this.context.secrets.store(key, JSON.stringify(clientInformation));
 	}
@@ -186,5 +235,28 @@ export class MCPOAuthClientProvider implements OAuthClientProvider {
 		await this.context.secrets.delete(tokensKey);
 		await this.context.globalState.update(codeVerifierKey, undefined);
 		await this.context.globalState.update(serverUrlKey, undefined);
+	}
+
+	async invalidateCredentials(scope: 'all' | 'client' | 'tokens' | 'verifier'): Promise<void> {
+		getLogger(this.identifier).info(`Invalidating credentials: ${scope}`);
+
+		const tokensKey = getServerSpecificKey(SESSION_KEYS.TOKENS, this.identifier);
+		const clientInfoKey = getServerSpecificKey(SESSION_KEYS.CLIENT_INFORMATION, this.identifier);
+		const codeVerifierKey = getServerSpecificKey(SESSION_KEYS.CODE_VERIFIER, this.identifier);
+
+		switch (scope) {
+			case 'tokens':
+				await this.context.secrets.delete(tokensKey);
+				break;
+			case 'client':
+				await this.context.secrets.delete(clientInfoKey);
+				break;
+			case 'verifier':
+				await this.context.globalState.update(codeVerifierKey, undefined);
+				break;
+			case 'all':
+				await this.clear();
+				break;
+		}
 	}
 }

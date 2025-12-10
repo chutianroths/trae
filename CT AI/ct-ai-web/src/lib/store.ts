@@ -274,31 +274,66 @@ export const useAppStore = create<AppState>()(
         const step = currentProject.steps.find((s) => s.id === stepId);
         if (!step) return;
 
+        // 获取 prompt，如果没有则使用模块的默认 prompt
+        const prompt = (step.parameters?.prompt as string) || step.moduleName || '处理图像';
+
         updateStepStatus(stepId, 'processing', 0);
 
-        for (let i = 0; i <= 100; i += 10) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-          updateStepStatus(stepId, 'processing', i);
-        }
+        try {
+          updateStepStatus(stepId, 'processing', 30);
 
-        const success = Math.random() > 0.1;
-        updateStepStatus(stepId, success ? 'success' : 'error', 100);
+          // 调用后端 API 生成图像
+          const response = await fetch('http://localhost:3000/api/modules', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prompt }),
+          });
 
-        if (!success) {
+          updateStepStatus(stepId, 'processing', 70);
+
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || `HTTP ${response.status}`);
+          }
+          
+          if (!data.data?.image) {
+            throw new Error('服务器未返回图像数据');
+          }
+
+          updateStepStatus(stepId, 'processing', 90);
+          
+          // 设置生成的图像为结果图像
+          setResultImage(data.data.image);
+          updateStepStatus(stepId, 'success', 100);
+        } catch (error) {
+          let errorMessage = '处理失败: 未知错误';
+          
+          if (error instanceof TypeError && error.message === 'Failed to fetch') {
+            errorMessage = '无法连接到后端服务。请确保后端服务运行在 http://localhost:3000';
+          } else if (error instanceof Error) {
+            errorMessage = error.message;
+            // 检查是否是配额限制错误
+            if (error.message.includes('quota') || error.message.includes('429')) {
+              errorMessage = 'API 配额已用完。请等待配额重置或升级计划。详细错误: ' + error.message;
+            }
+          }
+          
+          updateStepStatus(stepId, 'error', 100);
           set((state) => {
             if (!state.currentProject) return state;
             return {
               currentProject: {
                 ...state.currentProject,
                 steps: state.currentProject.steps.map((s) =>
-                  s.id === stepId ? { ...s, errorMessage: '处理失败: API超时' } : s,
+                  s.id === stepId ? { ...s, errorMessage } : s,
                 ),
               },
             };
           });
           setResultImage(null);
-        } else {
-          setResultImage(currentProject.originalImage);
         }
       },
 
@@ -454,6 +489,11 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         apiKeys: state.apiKeys,
         customModules: state.customModules,
+        vpnConfig: state.vpnConfig,
+        compressionConfig: state.compressionConfig,
+        selectedModel: state.selectedModel,
+        projects: state.projects,
+        currentProject: state.currentProject,
       }),
     },
   ),

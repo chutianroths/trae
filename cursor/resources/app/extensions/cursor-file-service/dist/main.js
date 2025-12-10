@@ -1,2 +1,2 @@
 (()=>{"use strict";var e={};(()=>{var r=e;Object.defineProperty(r,"__esModule",{value:!0}),r.DUMMY=void 0,r.DUMMY=1})();var r=exports;for(var o in e)r[o]=e[o];e.__esModule&&Object.defineProperty(r,"__esModule",{value:!0})})();
-//# sourceMappingURL=http://go/sourcemap/sourcemaps/9d178a4a5589981b62546448bb32920a8219a5d0/extensions/cursor-file-service/dist/main.js.map
+//# sourceMappingURL=http://go/sourcemap/sourcemaps/56f0a83df8e9eb48585fcc4858a9440db4cc7770/extensions/cursor-file-service/dist/main.js.map

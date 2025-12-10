@@ -106,7 +106,18 @@ export function ChainEditor() {
               </>
             )}
           </Button>
-          <Button variant="outline">
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (currentProject) {
+                const { updateProject } = useAppStore.getState();
+                updateProject({});
+                alert('进度已保存');
+              } else {
+                alert('没有可保存的项目');
+              }
+            }}
+          >
             保存进度
           </Button>
         </div>
@@ -161,7 +172,9 @@ export function ChainEditor() {
                         {step.status === 'error' && step.errorMessage && (
                           <Alert variant="destructive" className="mb-3">
                             <AlertCircle className="size-4" />
-                            <AlertDescription>{step.errorMessage}</AlertDescription>
+                            <AlertDescription className="whitespace-pre-wrap break-words">
+                              {step.errorMessage}
+                            </AlertDescription>
                           </Alert>
                         )}
 
